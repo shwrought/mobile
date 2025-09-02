@@ -23,7 +23,7 @@ if punchEvent then
 			task.spawn(function()
 				for _ = 1, 5 do
 					punchEvent:FireServer()
-					task.wait(0.01)
+					task.wait(0.005)
 				end
 			end)
 		end
