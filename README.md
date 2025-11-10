@@ -1,88 +1,96 @@
--- Inspector para Pasarela: lista estructura y propiedades útiles
--- Ejecuta esto en el mismo lugar donde probaste el collector.
+-- Client: AutoGotoAndBuy (StarterPlayerScripts, LocalScript)
 local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
-local nombrePasarela = "Pasarela" -- cambia esto si la carpeta tiene otro nombre
-local maxChildrenToShow = 200
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local hrp = character:WaitForChild("HumanoidRootPart")
 
-local function safePrint(...)
-    local ok, _ = pcall(function() print(...) end)
-    -- ignorar fallos de print en algunos ejecutores
-end
+local BuyEvent = ReplicatedStorage:WaitForChild("BuyNPC")
 
-local function isPlayerModel(model)
-    if not model or not model:IsA("Model") then return false end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Character == model then return true end
+-- CONFIG
+local TARGET_NAME = "Noobini Lusinini" -- si quieres buscar un nombre concreto; si no, usa nil
+local SEARCH_TAG = "Comun"
+local REACH_DISTANCE = 3 -- distancia para considerar "llegado" (studs)
+
+local function isTarget(npc)
+    if not npc or not npc:IsA("Model") then return false end
+    if not CollectionService:HasTag(npc, SEARCH_TAG) then return false end
+    if TARGET_NAME and string.upper(npc.Name) ~= string.upper(TARGET_NAME) then
+        return false
     end
-    return false
+    -- opcional: más validaciones (humanoid, price, etc)
+    return true
 end
 
-local function inspectModel(m)
-    safePrint("---- Modelo:", m:GetFullName())
-    safePrint(" Name:", m.Name, " Class:", m.ClassName)
-    safePrint(" IsDescendantOf workspace:", tostring(m:IsDescendantOf(workspace)))
-    safePrint(" IsA Model:", tostring(m:IsA("Model")))
-    safePrint(" IsPlayerCharacter:", tostring(isPlayerModel(m)))
-    local humanoid = m:FindFirstChildWhichIsA("Humanoid")
-    safePrint(" Has Humanoid:", tostring(not not humanoid))
-    local hrp = m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart
-    safePrint(" Has HRP/PrimaryPart:", tostring(not not hrp))
-    -- CollectionService tags (pcall por seguridad)
-    local ok, tags = pcall(function() return CollectionService:GetTags(m) end)
-    if ok and tags and #tags > 0 then
-        safePrint(" CollectionService Tags:", table.concat(tags, ", "))
+local function findNearestTarget()
+    local best, bestDist = nil, math.huge
+    for _, npc in ipairs(CollectionService:GetTagged(SEARCH_TAG)) do
+        if npc and npc:IsDescendantOf(workspace) and npc:IsA("Model") and isTarget(npc) then
+            local npcRoot = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
+            if npcRoot then
+                local d = (hrp.Position - npcRoot.Position).Magnitude
+                if d < bestDist then
+                    bestDist = d
+                    best = npc
+                end
+            end
+        end
+    end
+    return best, bestDist
+end
+
+local function gotoAndBuy(npc)
+    if not npc then return end
+    local npcRoot = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
+    if not npcRoot then return end
+
+    -- Pedir al humano que se mueva hacia la posición
+    humanoid:MoveTo(npcRoot.Position)
+
+    -- esperar hasta que llegue (o timeout)
+    local reached = humanoid.MoveToFinished:Wait() -- true si llegó, false si falló
+    -- alternativa: esperar a que la distancia sea menor
+    local arrived = (hrp.Position - npcRoot.Position).Magnitude <= REACH_DISTANCE
+
+    if arrived or reached then
+        -- solicitud segura al servidor
+        BuyEvent:FireServer(npc)
+        print("[Client] Solicitud de compra enviada para:", npc.Name)
     else
-        safePrint(" CollectionService Tags: none or inaccessible")
+        print("[Client] No se llegó al NPC:", npc.Name)
     end
-    -- listar hijos (StringValue / BoolValue / NumberValue / ObjectValues)
-    for _, child in ipairs(m:GetChildren()) do
-        local t = child.ClassName
-        if t == "StringValue" or t == "BoolValue" or t == "IntValue" or t == "NumberValue" or t == "ObjectValue" then
-            local val = nil
-            pcall(function() val = child.Value end)
-            safePrint("  -> Child:", child.Name, "Class:", t, "Value:", tostring(val))
+end
+
+-- Ejemplo: al presionar una tecla o comando ejecuta la búsqueda y compra
+-- Aquí lo hacemos con la tecla "B" (puedes adaptarlo)
+local UserInputService = game:GetService("UserInputService")
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.B then
+        local target, dist = findNearestTarget()
+        if target then
+            print("[Client] Objetivo encontrado:", target.Name, "dist:", dist)
+            gotoAndBuy(target)
         else
-            safePrint("  -> Child:", child.Name, "Class:", t)
+            print("[Client] No se encontró ningún NPC con etiqueta '"..SEARCH_TAG.."' y nombre objetivo.")
         end
     end
-    safePrint("---- FIN modelo ----")
-end
+end)
 
--- START
-safePrint("=== INSPECTOR: buscando contenedor '" .. nombrePasarela .. "' en workspace ===")
-local pasarela = workspace:FindFirstChild(nombrePasarela)
-if not pasarela then
-    safePrint("[INSPECTOR] No se encontró con FindFirstChild('"..nombrePasarela.."'). Intentando WaitForChild 5s...")
-    local ok, res = pcall(function() return workspace:WaitForChild(nombrePasarela, 5) end)
-    if ok and res then
-        pasarela = res
-        safePrint("[INSPECTOR] Pasarela encontrada con WaitForChild.")
-    else
-        safePrint("[INSPECTOR] NO se encontró la pasarela. Lista de hijos de workspace:")
-        for i, c in ipairs(workspace:GetChildren()) do
-            safePrint(" -", i, c.Name, c.ClassName)
-        end
-        return
-    end
-end
-
-safePrint("[INSPECTOR] Pasarela encontrada:", pasarela:GetFullName(), " Hijos:", #pasarela:GetChildren())
-
-local count = 0
-for _, child in ipairs(pasarela:GetChildren()) do
-    count = count + 1
-    if count > maxChildrenToShow then
-        safePrint("[INSPECTOR] Límite de hijos alcanzado:", maxChildrenToShow)
-        break
-    end
-    if child:IsA("Model") then
-        inspectModel(child)
-    else
-        safePrint("Elemento no model en pasarela:", child.Name, child.ClassName)
-    end
-    task.wait(0.03)
-end
-
-safePrint("=== INSPECTOR: FIN ===")
+-- Alternativa: Autostart (buscar y proceder inmediatamente)
+// --[[ Si prefieres que busque y vaya sin presionar tecla, descomenta:
+-- task.spawn(function()
+--     while true do
+--         local t = findNearestTarget()
+--         if t then
+--             gotoAndBuy(t)
+--             break -- o sleep para repetir
+--         end
+--         task.wait(1)
+--     end
+-- end)
+--]]
