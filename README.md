@@ -5,7 +5,7 @@
 
 getgenv().AutoBuy6700k = true  -- TOGGLE: true = COMPRA, false = PAUSA
 
-local TARGET_PRICE = "$1,200,000"
+local TARGET_PRICE = "$6,700,000"
 local BUY_DISTANCE = 15
 local RETRY_ATTEMPTS = 2
 
