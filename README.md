@@ -1,16 +1,15 @@
 -- ========================================
--- AUTO BUY NPC SCRIPT por Grok
--- Detecta NPC por nombre/tag, va hacia él y compra en loop
--- Compatible con executors (fireproximityprompt, fireclickdetector)
+-- AUTO COMPRAR NOOBINI LUSININI (Pasarela) - Steal a Brainrot
+-- Por Grok: Detecta en conveyor, va y compra AUTO 24/7
 -- ========================================
 
-getgenv().AutoBuyNPC = true  -- Toggle: true = ON, false = OFF
+getgenv().AutoBuyNoobini = true  -- Toggle: true=ON
 
-local NPC_NAME = Noobini Lusinini  -- Ej: "ShopKeeper" (deja nil si usas tag)
-local NPC_TAG = "Comun"  -- Etiqueta del NPC (ej: "Shop", "Vendor")
+local NPC_NAME = "Noobini Lusinini"  -- ← CAMBIA SI ES DISTINTO (ej: "NoobiniLusinini")
+local NPC_TAG = "Brainrot"  -- Fallback tag común (deja "" si no)
 
-local BUY_DISTANCE = 15  -- Distancia para comprar (ajusta)
-local PATH_AGENT_RADIUS = 3
+local BUY_DISTANCE = 25  -- Para pasarela
+local PATH_AGENT_RADIUS = 4
 local PATH_AGENT_HEIGHT = 6
 
 -- Servicios
@@ -24,19 +23,22 @@ local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootpart = character:WaitForChild("HumanoidRootPart")
 
--- Función para encontrar el NPC MÁS CERCA (por nombre o tag)
+-- Encontrar NPC MÁS CERCA (el listo en pasarela)
 local function findClosestNPC()
     local candidates = {}
     
-    if NPC_NAME then
-        local npc = workspace:FindFirstChild(NPC_NAME, true)
-        if npc then
-            table.insert(candidates, npc)
+    -- Por nombre
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == NPC_NAME and obj:FindFirstChild("HumanoidRootPart") then
+            table.insert(candidates, obj)
         end
-    else
+    end
+    
+    -- Por tag (si hay)
+    if NPC_TAG ~= "" then
         local tagged = CollectionService:GetTagged(NPC_TAG)
         for _, npc in ipairs(tagged) do
-            if npc:IsA("Model") and (npc.PrimaryPart or npc:FindFirstChild("HumanoidRootPart")) then
+            if npc.Name:find("Noobini") and npc:FindFirstChild("HumanoidRootPart") then
                 table.insert(candidates, npc)
             end
         end
@@ -46,96 +48,113 @@ local function findClosestNPC()
     local minDist = math.huge
     
     for _, npc in ipairs(candidates) do
-        local npcPos = npc.PrimaryPart and npc.PrimaryPart.Position or npc:FindFirstChild("HumanoidRootPart") and npc.HumanoidRootPart.Position or npc:GetModelCFrame().Position
-        local dist = (rootpart.Position - npcPos).Magnitude
-        if dist < minDist then
-            minDist = dist
-            closest = npc
+        local hrp = npc:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local dist = (rootpart.Position - hrp.Position).Magnitude
+            if dist < minDist then
+                minDist = dist
+                closest = npc
+            end
         end
     end
     
     return closest
 end
 
--- Función para ir al NPC (Pathfinding)
+-- Pathfinding a NPC (mejorado para conveyor)
 local function goToNPC(npc)
-    local npcPos = npc.PrimaryPart and npc.PrimaryPart.Position or npc:FindFirstChild("HumanoidRootPart") and npc.HumanoidRootPart.Position or npc:GetModelCFrame().Position
+    local hrp = npc:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    local npcPos = hrp.Position
     
     local path = PathfindingService:CreatePath({
         AgentRadius = PATH_AGENT_RADIUS,
         AgentHeight = PATH_AGENT_HEIGHT,
         AgentCanJump = true,
-        WaypointSpacing = 4
+        WaypointSpacing = 3,
+        Costs = {  -- Evita obstáculos comunes
+            Water = 20,
+            Danger = math.huge
+        }
     })
     
-    local success, err = pcall(function()
+    local success = pcall(function()
         path:ComputeAsync(rootpart.Position, npcPos)
     end)
     
     if success and path.Status == Enum.PathStatus.Success then
         local waypoints = path:GetWaypoints()
-        for _, waypoint in ipairs(waypoints) do
-            if getgenv().AutoBuyNPC == false then return end  -- Toggle check
+        for i, waypoint in ipairs(waypoints) do
+            if not getgenv().AutoBuyNoobini then return end
             
             humanoid:MoveTo(waypoint.Position)
             if waypoint.Action == Enum.PathWaypointAction.Jump then
                 humanoid.Jump = true
             end
             
-            local reached = humanoid.MoveToFinished:Wait(2.5)  -- Timeout por waypoint
-            if not reached then break end
+            humanoid.MoveToFinished:Wait(3)  -- Timeout
         end
     else
-        -- Fallback: Move directo si path falla
+        -- Directo si path falla
         humanoid:MoveTo(npcPos)
+        humanoid.MoveToFinished:Wait(3)
     end
 end
 
--- Función para comprar
+-- Comprar (ProximityPrompt optimizado)
 local function buyFromNPC(npc)
-    local prompt = npc:FindFirstChildOfClass("ProximityPrompt")
-    if prompt then
-        fireproximityprompt(prompt)  -- Principal: ProximityPrompt
-        return true
+    -- Busca en todo el modelo (a veces está en Head o parte)
+    for _, obj in ipairs(npc:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and (obj.ActionText == "Comprar" or obj.ObjectText:find("Noobini")) then
+            fireproximityprompt(obj)
+            return true
+        end
     end
     
+    -- Fallback ClickDetector
     local cd = npc:FindFirstChildOfClass("ClickDetector")
     if cd then
-        fireclickdetector(cd)  -- Fallback: ClickDetector
+        fireclickdetector(cd)
         return true
     end
     
     return false
 end
 
--- Loop principal
+-- LOOP PRINCIPAL: Auto-farm toda la noche
 spawn(function()
     while true do
-        if getgenv().AutoBuyNPC then
+        if getgenv().AutoBuyNoobini then
             local npc = findClosestNPC()
             if npc then
-                local npcPos = npc.PrimaryPart and npc.PrimaryPart.Position or npc:FindFirstChild("HumanoidRootPart") and npc.HumanoidRootPart.Position or npc:GetModelCFrame().Position
-                local dist = (rootpart.Position - npcPos).Magnitude
+                local hrp = npc:FindFirstChild("HumanoidRootPart")
+                local dist = (rootpart.Position - hrp.Position).Magnitude
+                
+                print("🛒 Noobini a", math.floor(dist), "studs")  -- Debug
                 
                 if dist > BUY_DISTANCE then
-                    -- Ir al NPC
                     goToNPC(npc)
                 else
-                    -- Ya cerca: Comprar
-                    buyFromNPC(npc)
+                    if buyFromNPC(npc) then
+                        print("✅ COMPRADO Noobini Lusinini!")
+                        wait(1)  -- Cooldown compra
+                    end
                 end
+            else
+                print("🔍 Buscando Noobini en pasarela...")
+                wait(1)
             end
         end
-        wait(0.5)  -- Delay para no spamear (ajusta si quieres más rápido)
+        wait(0.3)  -- Rápido pero no spam
     end
 end)
 
--- Re-conectar en respawn
+-- Respawn auto
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoid = character:WaitForChild("Humanoid")
     rootpart = character:WaitForChild("HumanoidRootPart")
 end)
 
-print("🛒 AutoBuyNPC ACTIVADO! Cambia getgenv().AutoBuyNPC = false para parar.")
-print("💡 Configura NPC_NAME o NPC_TAG arriba.")
+print("🚀 AUTO NOOBINI LUSININI ACTIVADO! Toda la noche farm.")
+print("Para parar: getgenv().AutoBuyNoobini = false")
