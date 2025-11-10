@@ -1,7 +1,9 @@
 -- ========================================
--- AUTO INFINITO $6,700,000 MULTI-TARGET (Velocidad DEFAULT + Retry 2x)
--- COMPRA TODOS los que detecta: Pasarela + Dealer + Múltiples NPCs
+-- AUTO MULTI $6,700,000 + TOGGLE DE COMPRA (Velocidad DEFAULT)
+-- getgenv().AutoBuy6700k = true/false → Activa/Desactiva compra
 -- ========================================
+
+getgenv().AutoBuy6700k = true  -- TOGGLE: true = COMPRA, false = PAUSA
 
 local TARGET_PRICE = "$250"
 local BUY_DISTANCE = 15
@@ -19,13 +21,12 @@ local rootpart = character:WaitForChild("HumanoidRootPart")
 
 -- Velocidad DEFAULT: NO TOCAR
 
--- Encontrar TODOS los $6.7M (lista completa)
+-- Encontrar TODOS los $6.7M
 local function findAll6700k()
     local candidates = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") then
             local objText = obj.ObjectText
-            -- Múltiples formatos de precio
             if objText:find(TARGET_PRICE) or 
                objText:find("6,700,000") or 
                objText:find("6700000") or 
@@ -34,16 +35,16 @@ local function findAll6700k()
                 local model = obj:FindFirstAncestorOfClass("Model")
                 if model and model:FindFirstChild("HumanoidRootPart") then
                     table.insert(candidates, {npc = model, prompt = obj})
-                    print("🎯 Encontrado [" .. #candidates .. "]: " .. objText .. " | Dist: " .. math.floor((rootpart.Position - model.HumanoidRootPart.Position).Magnitude))
+                    print("Encontado [" .. #candidates .. "]: " .. objText)
                 end
             end
         end
     end
-    print("📊 Total $6.7M detectados: " .. #candidates)
+    print("Total $6.7M detectados: " .. #candidates)
     return candidates
 end
 
--- Ordenar por distancia (más cerca primero)
+-- Ordenar por distancia
 local function sortByDistance(candidates)
     table.sort(candidates, function(a, b)
         local distA = (rootpart.Position - a.npc.HumanoidRootPart.Position).Magnitude
@@ -52,7 +53,7 @@ local function sortByDistance(candidates)
     end)
 end
 
--- Caminar NORMAL al target
+-- Caminar NORMAL
 local function walkToNPC(npc)
     local hrp = npc.HumanoidRootPart
     local targetPos = hrp.Position + Vector3.new(0, 0, -3)
@@ -69,6 +70,7 @@ local function walkToNPC(npc)
         if path.Status == Enum.PathStatus.Success then
             local waypoints = path:GetWaypoints()
             for _, wp in ipairs(waypoints) do
+                if not getgenv().AutoBuy6700k then return end  -- Respeta toggle
                 humanoid:MoveTo(wp.Position)
                 if wp.Action == Enum.PathWaypointAction.Jump then
                     humanoid.Jump = true
@@ -79,50 +81,60 @@ local function walkToNPC(npc)
     end)
 end
 
--- COMPRA CON RETRY (para cada uno)
+-- COMPRA CON RETRY
 local function buyWithRetry(prompt)
+    if not getgenv().AutoBuy6700k then return end  -- Respeta toggle
+    
     pcall(function()
         prompt.HoldDuration = 0
         prompt.MaxActivationDistance = 50
     end)
     
     for i = 1, RETRY_ATTEMPTS do
+        if not getgenv().AutoBuy6700k then return end
         fireproximityprompt(prompt, 0)
         wait(0.3)
-        print("💥 Intento " .. i .. "/" .. RETRY_ATTEMPTS .. " → " .. prompt.ObjectText)
+        print("Intento " .. i .. "/" .. RETRY_ATTEMPTS .. " → " .. prompt.ObjectText)
     end
     
-    print("✅ FINALIZADO compra/retry para " .. prompt.ObjectText)
+    print("FINALIZADO compra para " .. prompt.ObjectText)
 end
 
--- LOOP INFINITO: Compra TODOS en orden (cerca → lejos)
+-- LOOP INFINITO CON TOGGLE
 spawn(function()
     while true do
-        local allTargets = findAll6700k()
-        if #allTargets > 0 then
-            sortByDistance(allTargets)  -- Más cerca primero
-            
-            for i, target in ipairs(allTargets) do
-                local hrp = target.npc.HumanoidRootPart
-                local dist = (rootpart.Position - hrp.Position).Magnitude
+        if getgenv().AutoBuy6700k then
+            local allTargets = findAll6700k()
+            if #allTargets > 0 then
+                sortByDistance(allTargets)
                 
-                print("🚶 Target " .. i .. "/" .. #allTargets .. " a " .. math.floor(dist) .. " studs")
-                
-                if dist > BUY_DISTANCE then
-                    print("→ Caminando...")
-                    walkToNPC(target.npc)
+                for i, target in ipairs(allTargets) do
+                    if not getgenv().AutoBuy6700k then break end  -- Pausa inmediata
+                    
+                    local hrp = target.npc.HumanoidRootPart
+                    local dist = (rootpart.Position - hrp.Position).Magnitude
+                    
+                    print("Target " .. i .. "/" .. #allTargets .. " a " .. math.floor(dist) .. " studs")
+                    
+                    if dist > BUY_DISTANCE then
+                        print("→ Caminando...")
+                        walkToNPC(target.npc)
+                    end
+                    
+                    print("→ Comprando...")
+                    buyWithRetry(target.prompt)
+                    
+                    wait(0.8)
                 end
                 
-                print("→ Comprando...")
-                buyWithRetry(target.prompt)
-                
-                wait(0.8)  -- Cooldown entre targets
+                print("Ciclo completado, re-busca...")
+            else
+                print("Sin $6.7M... buscando.")
+                wait(0.5)
             end
-            
-            print("🔄 Ciclo completado, re-busca...")
         else
-            print("🔍 Sin $6.7M... (pasarela/dealer)")
-            wait(0.5)
+            print("PAUSADO (toggle OFF). Cambia getgenv().AutoBuy6700k = true para reanudar.")
+            wait(1)
         end
         
         wait(0.2)
@@ -136,5 +148,8 @@ player.CharacterAdded:Connect(function(newChar)
     rootpart = character:WaitForChild("HumanoidRootPart")
 end)
 
-print("🔥 AUTO MULTI $6,700,000 ACTIVADO! Compra TODOS + Default speed + Retry 2x")
-print("→ Detecta lista completa, ordena por distancia, compra cada uno.")
+-- INICIO
+print("TOGGLE AUTO $6,700,000 ACTIVADO!")
+print("→ getgenv().AutoBuy6700k = true  → COMPRA")
+print("→ getgenv().AutoBuy6700k = false → PAUSA")
+print("→ Compra TODOS, velocidad default, retry 2x")
