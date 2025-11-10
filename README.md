@@ -1,53 +1,33 @@
 -- ========================================
--- AUTO $6,700,000 ANTI-LAG (SINGLE CLICK) - Steal a Brainrot Dealer
--- FIX: Solo 1 fireproximityprompt + HoldDuration=0 → SIN SPAM/LAG
+-- WALK + COMPRA NORMAL $6,700,000 (Velocidad por DEFECTO)
+-- Camina con Pathfinding, compra UNA VEZ, VELOCIDAD NORMAL
 -- ========================================
 
-getgenv().AutoBuy6700k = true
-
 local TARGET_PRICE = "$250"
-local BUY_DISTANCE = 50
-local SPEED = 200
+local BUY_DISTANCE = 15
+-- SIN SPEED HACK: Velocidad por defecto (16)
 
 -- Servicios
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local TeleportService = game:GetService("TeleportService")
+local PathfindingService = game:GetService("PathfindingService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootpart = character:WaitForChild("HumanoidRootPart")
 
--- Anti-lag: Velocidad + NoClip
-humanoid.WalkSpeed = SPEED
-humanoid.JumpPower = 100
+-- Velocidad POR DEFECTO: NO TOCAR
+-- humanoid.WalkSpeed = 16  -- Ya es default
 
-local function noclip()
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then part.CanCollide = false end
-    end
-end
-
--- INSTANT PROMPT: HoldDuration = 0 (¡CLAVE ANTI-LAG!)
-local function makeInstant(prompt)
-    pcall(function()
-        prompt.HoldDuration = 0
-        prompt.MaxActivationDistance = 200
-    end)
-end
-
--- Encontrar $6.7M (pasarela/dealer)
+-- Encontrar $6.7M más cerca
 local function findClosest6700k()
     local candidates = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and (obj.ObjectText:find(TARGET_PRICE) or obj.ObjectText:lower():find("6700000")) then
-            makeInstant(obj)  -- INSTANT YA
+        if obj:IsA("ProximityPrompt") and obj.ObjectText:find(TARGET_PRICE) then
             local model = obj:FindFirstAncestorOfClass("Model")
             if model and model:FindFirstChild("HumanoidRootPart") then
                 table.insert(candidates, {npc = model, prompt = obj})
-                print("🎯 ENCONTRADO " .. obj.ObjectText)
+                print("🎯 Encontrado " .. obj.ObjectText)
             end
         end
     end
@@ -57,71 +37,62 @@ local function findClosest6700k()
     for _, cand in ipairs(candidates) do
         local hrp = cand.npc.HumanoidRootPart
         local dist = (rootpart.Position - hrp.Position).Magnitude
-        if dist < minDist then minDist = dist; closest = cand end
+        if dist < minDist then
+            minDist = dist
+            closest = cand
+        end
     end
     return closest
 end
 
--- TP RÁPIDO
-local function tpToNPC(npc)
+-- Caminar NORMAL con Pathfinding (velocidad default)
+local function walkToNPC(npc)
     local hrp = npc.HumanoidRootPart
-    rootpart.CFrame = hrp.CFrame * CFrame.new(0, 5, -5)
-    wait(0.05)  -- Mínimo
-end
-
--- COMPRA SINGLE-CLICK (¡SIN SPAM!)
-local function buySingle(prompt)
-    makeInstant(prompt)
-    fireproximityprompt(prompt, 0)  -- 0 = hold instantáneo, 1 sola vez
-    print("💥 COMPRADO " .. TARGET_PRICE .. " (SINGLE CLICK)")
-end
-
--- LOOP ANTI-LAG (Heartbeat pero smart)
-spawn(function()
-    RunService.Heartbeat:Connect(function()
-        if getgenv().AutoBuy6700k then
-            noclip()
-            local target = findClosest6700k()
-            if target then
-                local dist = (rootpart.Position - target.npc.HumanoidRootPart.Position).Magnitude
-                if dist > 10 then
-                    tpToNPC(target.npc)
-                else
-                    buySingle(target.prompt)
-                    wait(1.5)  -- Cooldown ANTI-SPAM (importante!)
+    local targetPos = hrp.Position + Vector3.new(0, 0, -3)  -- Frente
+    
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 3,
+        AgentHeight = 6,
+        AgentCanJump = true,
+        WaypointSpacing = 4
+    })
+    
+    pcall(function()
+        path:ComputeAsync(rootpart.Position, targetPos)
+        if path.Status == Enum.PathStatus.Success then
+            local waypoints = path:GetWaypoints()
+            for _, wp in ipairs(waypoints) do
+                humanoid:MoveTo(wp.Position)
+                if wp.Action == Enum.PathWaypointAction.Jump then
+                    humanoid.Jump = true
                 end
+                humanoid.MoveToFinished:Wait(4)  -- Más tiempo para velocidad normal
             end
         end
     end)
-end)
+end
 
--- Auto-rejoin si no hay stock (Dealer restock)
-spawn(function()
-    while true do
-        wait(45)
-        if getgenv().AutoBuy6700k then
-            local found = false
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("ProximityPrompt") and obj.ObjectText:find(TARGET_PRICE) then
-                    found = true; break
-                end
-            end
-            if not found then
-                print("🔄 Rejoin por restock...")
-                TeleportService:Teleport(game.PlaceId, player)
-            end
-        end
+-- Compra NORMAL (1 click)
+local function buyNormal(prompt)
+    pcall(function()
+        prompt.HoldDuration = 0
+        prompt.MaxActivationDistance = 50
+        fireproximityprompt(prompt, 0)
+    end)
+    print("✅ COMPRADO " .. TARGET_PRICE .. " (VELOCIDAD NORMAL)")
+end
+
+-- SCRIPT PRINCIPAL: UNA VEZ SOLO
+local target = findClosest6700k()
+if target then
+    print("🚶 Camina a $6.7M (velocidad por defecto)...")
+    local dist = (rootpart.Position - target.npc.HumanoidRootPart.Position).Magnitude
+    if dist > BUY_DISTANCE then
+        walkToNPC(target.npc)
     end
-end)
+    buyNormal(target.prompt)
+else
+    print("❌ No encontró $6.7M. Ve manual a pasarela/dealer.")
+end
 
--- Respawn
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    humanoid = character:WaitForChild("Humanoid")
-    rootpart = character:WaitForChild("HumanoidRootPart")
-    humanoid.WalkSpeed = SPEED
-end)
-
-print("⚡ AUTO $6.7M ANTI-LAG ACTIVADO! (Single Click)")
-print("Para parar: getgenv().AutoBuy6700k = false")
-print("💡 Si lag: Baja SPEED a 100")
+print("🛑 Script terminado. Todo normal.")
