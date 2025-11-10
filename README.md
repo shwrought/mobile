@@ -1,13 +1,13 @@
 -- ========================================
--- AUTO COMPRAR $6,700,000 BRAINROT (Pasarela)
--- Detecta SOLO "$6,700,000" + "Comprar" → Va y COMPRA AUTO
+-- AUTO COMPRAR $250 BRAINROTS (Pasarela) - Steal a Brainrot
+-- Detecta SOLO por "$6,700,000" + "Comprar" → Va y COMPRA AUTO 24/7
+-- Por Grok: ¡Funciona toda la noche! 💰😴
 -- ========================================
 
-getgenv().AutoBuy6700k = true  -- Toggle: true=ON
+getgenv().AutoBuy250 = true  -- Toggle: true=ON / false=OFF
 
-local TARGET_PRICE = "$6,700,000"  -- ← CAMBIA AQUÍ SI QUIERES OTRO
-local BUY_DISTANCE = 22
-local SPEED = 120  -- Más rápido para brainrots caros
+local BUY_DISTANCE = 20  -- Distancia para comprar (prompt suele ser 10-15)
+local SPEED = 100  -- WalkSpeed alta para pasarela rápida
 local JUMP_POWER = 100
 
 -- Servicios
@@ -21,24 +21,25 @@ local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootpart = character:WaitForChild("HumanoidRootPart")
 
+-- Config velocidad
 humanoid.WalkSpeed = SPEED
 humanoid.JumpPower = JUMP_POWER
 
--- Encontrar MÁS CERCA $6,700,000
-local function findClosest6700k()
+-- Encontrar MÁS CERCA $250 Prompt (¡MAGIA!)
+local function findClosest250()
     local candidates = {}
     
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("ProximityPrompt") then
-            local objText = obj.ObjectText
-            local actText = obj.ActionText
+            local objText = obj.ObjectText:lower()
+            local actText = obj.ActionText:lower()
             
-            -- Detecta EXACTO: "$6,700,000" + "Comprar"
-            if objText == TARGET_PRICE and (actText == "Comprar" or actText == "Buy") then
+            -- Filtra EXACTO: "$6,700,000" Y "comprar"
+            if objText:find("$6,700,000") and (actText:find("comprar") or actText:find("buy")) then
                 local model = obj:FindFirstAncestorOfClass("Model")
                 if model and model:FindFirstChild("HumanoidRootPart") then
                     table.insert(candidates, {npc = model, prompt = obj})
-                    print("RARE Encontrado " .. TARGET_PRICE .. "!")
+                    print("🔍 Encontrado $6,700,000: " .. obj.ObjectText)  -- Debug
                 end
             end
         end
@@ -61,17 +62,19 @@ local function findClosest6700k()
     return closest
 end
 
--- Ir al NPC (rápido y preciso)
+-- Ir al NPC (Pathfinding + Tween fallback)
 local function goToNPC(npc)
     local hrp = npc:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    local targetPos = hrp.Position + Vector3.new(0, 4, 0)
+    local targetPos = hrp.Position + Vector3.new(0, 3, 0)  -- Un poco arriba
     
+    -- Pathfinding principal
     local path = PathfindingService:CreatePath({
         AgentRadius = 3,
         AgentHeight = 6,
         AgentCanJump = true,
-        WaypointSpacing = 3
+        WaypointSpacing = 4,
+        Costs = {Water = 50}
     })
     
     local success = pcall(function() path:ComputeAsync(rootpart.Position, targetPos) end)
@@ -79,15 +82,15 @@ local function goToNPC(npc)
     if success and path.Status == Enum.PathStatus.Success then
         local waypoints = path:GetWaypoints()
         for _, wp in ipairs(waypoints) do
-            if not getgenv().AutoBuy6700k then return end
+            if not getgenv().AutoBuy250 then return end
             humanoid:MoveTo(wp.Position)
             if wp.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
-            humanoid.MoveToFinished:Wait(1.8)
+            humanoid.MoveToFinished:Wait(2)
         end
     else
-        -- Tween directo
+        -- Fallback: Tween suave y rápido
         local dist = (rootpart.Position - targetPos).Magnitude
-        local tweenInfo = TweenInfo.new(math.max(dist / 100, 0.4), "Linear")
+        local tweenInfo = TweenInfo.new(math.max(dist / 80, 0.5), "Linear")
         local tween = TweenService:Create(rootpart, tweenInfo, {CFrame = CFrame.new(targetPos)})
         tween:Play()
         tween.Completed:Wait()
@@ -97,36 +100,37 @@ end
 -- COMPRAR
 local function buyFromPrompt(prompt)
     fireproximityprompt(prompt)
-    print("JACKPOT COMPRADO " .. TARGET_PRICE .. " BRAINROT!")
-    wait(1.2)  -- Cooldown para no spamear
+    print("✅ ¡COMPRADO $6,700,000 BRAINROT!")
+    return true
 end
 
--- LOOP INFINITO
+-- LOOP INFINITO: Farm toda la noche
 spawn(function()
     while true do
-        if getgenv().AutoBuy6700k then
-            local target = findClosest6700k()
+        if getgenv().AutoBuy250 then
+            local target = findClosest250()
             if target then
                 local hrp = target.npc:FindFirstChild("HumanoidRootPart")
                 local dist = (rootpart.Position - hrp.Position).Magnitude
                 
-                print("TARGET " .. TARGET_PRICE .. " a " .. math.floor(dist) .. " studs")
+                print("🛒 $6,700,000 a " .. math.floor(dist) .. " studs")
                 
                 if dist > BUY_DISTANCE then
                     goToNPC(target.npc)
                 else
                     buyFromPrompt(target.prompt)
+                    wait(0.8)  -- Cooldown post-compra
                 end
             else
-                print("WAITING Esperando " .. TARGET_PRICE .. " en pasarela...")
-                wait(1.5)
+                print("🔍 Buscando $6,700,000 en pasarela...")
+                wait(1)
             end
         end
-        wait(0.15)  -- Ultra rápido
+        wait(0.2)  -- Súper rápido
     end
 end)
 
--- Respawn
+-- Respawn auto + velocidad
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoid = character:WaitForChild("Humanoid")
@@ -135,5 +139,6 @@ player.CharacterAdded:Connect(function(newChar)
     humanoid.JumpPower = JUMP_POWER
 end)
 
-print("JACKPOT AUTO " .. TARGET_PRICE .. " ACTIVADO!")
-print("Para parar: getgenv().AutoBuy6700k = false")
+print("🚀 AUTO $6,700,000 ACTIVADO! (Steal a Brainrot Pasarela)")
+print("Para parar: getgenv().AutoBuy250 = false")
+print("💡 Si no detecta, mira consola (F9) para nombres exactos.")
