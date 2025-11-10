@@ -1,45 +1,46 @@
 -- ========================================
--- AUTO COMPRAR NOOBINI LUSININI (Pasarela) - Steal a Brainrot
--- Por Grok: Detecta en conveyor, va y compra AUTO 24/7
+-- AUTO COMPRAR $250 BRAINROTS (Pasarela) - Steal a Brainrot
+-- Detecta SOLO por "$250" + "Comprar" → Va y COMPRA AUTO 24/7
+-- Por Grok: ¡Funciona toda la noche! 💰😴
 -- ========================================
 
-getgenv().AutoBuyNoobini = true  -- Toggle: true=ON
+getgenv().AutoBuy250 = true  -- Toggle: true=ON / false=OFF
 
-local NPC_NAME = "Noobini Lusinini"  -- ← CAMBIA SI ES DISTINTO (ej: "NoobiniLusinini")
-local NPC_TAG = "Brainrot"  -- Fallback tag común (deja "" si no)
-
-local BUY_DISTANCE = 25  -- Para pasarela
-local PATH_AGENT_RADIUS = 4
-local PATH_AGENT_HEIGHT = 6
+local BUY_DISTANCE = 20  -- Distancia para comprar (prompt suele ser 10-15)
+local SPEED = 100  -- WalkSpeed alta para pasarela rápida
+local JUMP_POWER = 100
 
 -- Servicios
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
-local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootpart = character:WaitForChild("HumanoidRootPart")
 
--- Encontrar NPC MÁS CERCA (el listo en pasarela)
-local function findClosestNPC()
+-- Config velocidad
+humanoid.WalkSpeed = SPEED
+humanoid.JumpPower = JUMP_POWER
+
+-- Encontrar MÁS CERCA $250 Prompt (¡MAGIA!)
+local function findClosest250()
     local candidates = {}
     
-    -- Por nombre
     for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name == NPC_NAME and obj:FindFirstChild("HumanoidRootPart") then
-            table.insert(candidates, obj)
-        end
-    end
-    
-    -- Por tag (si hay)
-    if NPC_TAG ~= "" then
-        local tagged = CollectionService:GetTagged(NPC_TAG)
-        for _, npc in ipairs(tagged) do
-            if npc.Name:find("Noobini") and npc:FindFirstChild("HumanoidRootPart") then
-                table.insert(candidates, npc)
+        if obj:IsA("ProximityPrompt") then
+            local objText = obj.ObjectText:lower()
+            local actText = obj.ActionText:lower()
+            
+            -- Filtra EXACTO: "$250" Y "comprar"
+            if objText:find("$250") and (actText:find("comprar") or actText:find("buy")) then
+                local model = obj:FindFirstAncestorOfClass("Model")
+                if model and model:FindFirstChild("HumanoidRootPart") then
+                    table.insert(candidates, {npc = model, prompt = obj})
+                    print("🔍 Encontrado $250: " .. obj.ObjectText)  -- Debug
+                end
             end
         end
     end
@@ -47,13 +48,13 @@ local function findClosestNPC()
     local closest = nil
     local minDist = math.huge
     
-    for _, npc in ipairs(candidates) do
-        local hrp = npc:FindFirstChild("HumanoidRootPart")
+    for _, cand in ipairs(candidates) do
+        local hrp = cand.npc:FindFirstChild("HumanoidRootPart")
         if hrp then
             local dist = (rootpart.Position - hrp.Position).Magnitude
             if dist < minDist then
                 minDist = dist
-                closest = npc
+                closest = cand
             end
         end
     end
@@ -61,100 +62,83 @@ local function findClosestNPC()
     return closest
 end
 
--- Pathfinding a NPC (mejorado para conveyor)
+-- Ir al NPC (Pathfinding + Tween fallback)
 local function goToNPC(npc)
     local hrp = npc:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    local npcPos = hrp.Position
+    local targetPos = hrp.Position + Vector3.new(0, 3, 0)  -- Un poco arriba
     
+    -- Pathfinding principal
     local path = PathfindingService:CreatePath({
-        AgentRadius = PATH_AGENT_RADIUS,
-        AgentHeight = PATH_AGENT_HEIGHT,
+        AgentRadius = 3,
+        AgentHeight = 6,
         AgentCanJump = true,
-        WaypointSpacing = 3,
-        Costs = {  -- Evita obstáculos comunes
-            Water = 20,
-            Danger = math.huge
-        }
+        WaypointSpacing = 4,
+        Costs = {Water = 50}
     })
     
-    local success = pcall(function()
-        path:ComputeAsync(rootpart.Position, npcPos)
-    end)
+    local success = pcall(function() path:ComputeAsync(rootpart.Position, targetPos) end)
     
     if success and path.Status == Enum.PathStatus.Success then
         local waypoints = path:GetWaypoints()
-        for i, waypoint in ipairs(waypoints) do
-            if not getgenv().AutoBuyNoobini then return end
-            
-            humanoid:MoveTo(waypoint.Position)
-            if waypoint.Action == Enum.PathWaypointAction.Jump then
-                humanoid.Jump = true
-            end
-            
-            humanoid.MoveToFinished:Wait(3)  -- Timeout
+        for _, wp in ipairs(waypoints) do
+            if not getgenv().AutoBuy250 then return end
+            humanoid:MoveTo(wp.Position)
+            if wp.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+            humanoid.MoveToFinished:Wait(2)
         end
     else
-        -- Directo si path falla
-        humanoid:MoveTo(npcPos)
-        humanoid.MoveToFinished:Wait(3)
+        -- Fallback: Tween suave y rápido
+        local dist = (rootpart.Position - targetPos).Magnitude
+        local tweenInfo = TweenInfo.new(math.max(dist / 80, 0.5), "Linear")
+        local tween = TweenService:Create(rootpart, tweenInfo, {CFrame = CFrame.new(targetPos)})
+        tween:Play()
+        tween.Completed:Wait()
     end
 end
 
--- Comprar (ProximityPrompt optimizado)
-local function buyFromNPC(npc)
-    -- Busca en todo el modelo (a veces está en Head o parte)
-    for _, obj in ipairs(npc:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and (obj.ActionText == "Comprar" or obj.ObjectText:find("Noobini")) then
-            fireproximityprompt(obj)
-            return true
-        end
-    end
-    
-    -- Fallback ClickDetector
-    local cd = npc:FindFirstChildOfClass("ClickDetector")
-    if cd then
-        fireclickdetector(cd)
-        return true
-    end
-    
-    return false
+-- COMPRAR
+local function buyFromPrompt(prompt)
+    fireproximityprompt(prompt)
+    print("✅ ¡COMPRADO $250 BRAINROT!")
+    return true
 end
 
--- LOOP PRINCIPAL: Auto-farm toda la noche
+-- LOOP INFINITO: Farm toda la noche
 spawn(function()
     while true do
-        if getgenv().AutoBuyNoobini then
-            local npc = findClosestNPC()
-            if npc then
-                local hrp = npc:FindFirstChild("HumanoidRootPart")
+        if getgenv().AutoBuy250 then
+            local target = findClosest250()
+            if target then
+                local hrp = target.npc:FindFirstChild("HumanoidRootPart")
                 local dist = (rootpart.Position - hrp.Position).Magnitude
                 
-                print("🛒 Noobini a", math.floor(dist), "studs")  -- Debug
+                print("🛒 $250 a " .. math.floor(dist) .. " studs")
                 
                 if dist > BUY_DISTANCE then
-                    goToNPC(npc)
+                    goToNPC(target.npc)
                 else
-                    if buyFromNPC(npc) then
-                        print("✅ COMPRADO Noobini Lusinini!")
-                        wait(1)  -- Cooldown compra
-                    end
+                    buyFromPrompt(target.prompt)
+                    wait(0.8)  -- Cooldown post-compra
                 end
             else
-                print("🔍 Buscando Noobini en pasarela...")
+                print("🔍 Buscando $250 en pasarela...")
                 wait(1)
             end
         end
-        wait(0.3)  -- Rápido pero no spam
+        wait(0.2)  -- Súper rápido
     end
 end)
 
--- Respawn auto
+-- Respawn auto + velocidad
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoid = character:WaitForChild("Humanoid")
     rootpart = character:WaitForChild("HumanoidRootPart")
+    humanoid.WalkSpeed = SPEED
+    humanoid.JumpPower = JUMP_POWER
 end)
 
-print("🚀 AUTO NOOBINI LUSININI ACTIVADO! Toda la noche farm.")
-print("Para parar: getgenv().AutoBuyNoobini = false")
+print("🚀 AUTO $250 ACTIVADO! (Steal a Brainrot Pasarela)")
+print("Para parar: getgenv().AutoBuy250 = false")
+print("💡 Si no detecta, mira consola (F9) para nombres exactos.")
