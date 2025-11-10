@@ -1,6 +1,6 @@
 -- ========================================
--- AUTO MULTI $6,700,000 + TOGGLE DE COMPRA (Velocidad DEFAULT)
--- getgenv().AutoBuy6700k = true/false → Activa/Desactiva compra
+-- AUTO MULTI $6,700,000 + LOOP HASTA COMPRAR (Toggle + Velocidad DEFAULT)
+-- Compra TODOS → Para CADA uno: LOOP INFINITO hasta que COMPRA ÉXITO
 -- ========================================
 
 getgenv().AutoBuy6700k = true  -- TOGGLE: true = COMPRA, false = PAUSA
@@ -35,16 +35,16 @@ local function findAll6700k()
                 local model = obj:FindFirstAncestorOfClass("Model")
                 if model and model:FindFirstChild("HumanoidRootPart") then
                     table.insert(candidates, {npc = model, prompt = obj})
-                    print("Encontado [" .. #candidates .. "]: " .. objText)
+                    print("🎯 Encontrado [" .. #candidates .. "]: " .. objText)
                 end
             end
         end
     end
-    print("Total $6.7M detectados: " .. #candidates)
+    print("📊 Total $6.7M detectados: " .. #candidates)
     return candidates
 end
 
--- Ordenar por distancia
+-- Ordenar por distancia (cerca → lejos)
 local function sortByDistance(candidates)
     table.sort(candidates, function(a, b)
         local distA = (rootpart.Position - a.npc.HumanoidRootPart.Position).Magnitude
@@ -70,7 +70,7 @@ local function walkToNPC(npc)
         if path.Status == Enum.PathStatus.Success then
             local waypoints = path:GetWaypoints()
             for _, wp in ipairs(waypoints) do
-                if not getgenv().AutoBuy6700k then return end  -- Respeta toggle
+                if not getgenv().AutoBuy6700k then return end
                 humanoid:MoveTo(wp.Position)
                 if wp.Action == Enum.PathWaypointAction.Jump then
                     humanoid.Jump = true
@@ -81,26 +81,41 @@ local function walkToNPC(npc)
     end)
 end
 
--- COMPRA CON RETRY
-local function buyWithRetry(prompt)
-    if not getgenv().AutoBuy6700k then return end  -- Respeta toggle
+-- 🔥 LOOP INFINITO HASTA COMPRAR (para CADA NPC)
+local function loopUntilBuy(prompt)
+    if not getgenv().AutoBuy6700k then return end
     
+    local attempt = 0
     pcall(function()
         prompt.HoldDuration = 0
         prompt.MaxActivationDistance = 50
     end)
     
-    for i = 1, RETRY_ATTEMPTS do
-        if not getgenv().AutoBuy6700k then return end
-        fireproximityprompt(prompt, 0)
-        wait(0.3)
-        print("Intento " .. i .. "/" .. RETRY_ATTEMPTS .. " → " .. prompt.ObjectText)
+    while getgenv().AutoBuy6700k do
+        attempt = attempt + 1
+        
+        -- Retry 2x por ciclo
+        for i = 1, RETRY_ATTEMPTS do
+            fireproximityprompt(prompt, 0)
+            wait(0.2)
+        end
+        
+        print("🔄 LOOP #" .. attempt .. " → Intentando comprar: " .. prompt.ObjectText)
+        
+        -- Chequea si DESAPARECIÓ el prompt (¡COMPRA ÉXITO!)
+        wait(0.5)
+        if not prompt or not prompt.Parent then
+            print("✅ ¡COMPRADO ÉXITO! Prompt eliminado.")
+            return true  -- ÉXITO, pasa al siguiente NPC
+        end
+        
+        wait(0.3)  -- Pausa entre loops
     end
     
-    print("FINALIZADO compra para " .. prompt.ObjectText)
+    return false  -- Toggle off
 end
 
--- LOOP INFINITO CON TOGGLE
+-- LOOP PRINCIPAL INFINITO
 spawn(function()
     while true do
         if getgenv().AutoBuy6700k then
@@ -109,35 +124,35 @@ spawn(function()
                 sortByDistance(allTargets)
                 
                 for i, target in ipairs(allTargets) do
-                    if not getgenv().AutoBuy6700k then break end  -- Pausa inmediata
+                    if not getgenv().AutoBuy6700k then break end
                     
                     local hrp = target.npc.HumanoidRootPart
                     local dist = (rootpart.Position - hrp.Position).Magnitude
                     
-                    print("Target " .. i .. "/" .. #allTargets .. " a " .. math.floor(dist) .. " studs")
+                    print("🎯 Target " .. i .. "/" .. #allTargets .. " (" .. math.floor(dist) .. " studs)")
                     
                     if dist > BUY_DISTANCE then
                         print("→ Caminando...")
                         walkToNPC(target.npc)
                     end
                     
-                    print("→ Comprando...")
-                    buyWithRetry(target.prompt)
+                    print("🔥 INICIANDO LOOP HASTA COMPRAR...")
+                    loopUntilBuy(target.prompt)  -- ¡NO PASA AL SIGUIENTE HASTA COMPRAR!
                     
-                    wait(0.8)
+                    wait(1)  -- Cooldown entre NPCs
                 end
                 
-                print("Ciclo completado, re-busca...")
+                print("✅ Ciclo TODOS completado, re-busca...")
             else
-                print("Sin $6.7M... buscando.")
-                wait(0.5)
+                print("🔍 Sin $6.7M... esperando.")
+                wait(1)
             end
         else
-            print("PAUSADO (toggle OFF). Cambia getgenv().AutoBuy6700k = true para reanudar.")
+            print("⏸️ PAUSADO. getgenv().AutoBuy6700k = true para reanudar.")
             wait(1)
         end
         
-        wait(0.2)
+        wait(0.3)
     end
 end)
 
@@ -148,8 +163,6 @@ player.CharacterAdded:Connect(function(newChar)
     rootpart = character:WaitForChild("HumanoidRootPart")
 end)
 
--- INICIO
-print("TOGGLE AUTO $6,700,000 ACTIVADO!")
-print("→ getgenv().AutoBuy6700k = true  → COMPRA")
-print("→ getgenv().AutoBuy6700k = false → PAUSA")
-print("→ Compra TODOS, velocidad default, retry 2x")
+print("🚀 AUTO $6,700,000 + LOOP HASTA COMPRAR ACTIVADO!")
+print("🔥 Para CADA NPC → LOOP INFINITO hasta que DESAPAREZCA el prompt")
+print("📋 Toggle: getgenv().AutoBuy6700k = true/false")
