@@ -1,13 +1,13 @@
 -- ========================================
--- AUTO COMPRAR $250 BRAINROTS (Pasarela) - Steal a Brainrot
--- Detecta SOLO por "$6,700,000" + "Comprar" → Va y COMPRA AUTO 24/7
--- Por Grok: ¡Funciona toda la noche! 💰😴
+-- AUTO COMPRAR [PRECIO] BRAINROTS - Configurable
+-- Detecta CUALQUIER precio → Va y COMPRA AUTO 24/7
 -- ========================================
 
-getgenv().AutoBuy250 = true  -- Toggle: true=ON / false=OFF
+getgenv().AutoBuyPrice = true  -- Toggle: true=ON
 
-local BUY_DISTANCE = 20  -- Distancia para comprar (prompt suele ser 10-15)
-local SPEED = 100  -- WalkSpeed alta para pasarela rápida
+local TARGET_PRICE = "$250"  -- ← CAMBIA AQUÍ: "$500", "$100", "$1000", etc.
+local BUY_DISTANCE = 20
+local SPEED = 100
 local JUMP_POWER = 100
 
 -- Servicios
@@ -21,12 +21,11 @@ local character = player.Character or player.CharacterAdded:Wait()
 local humanoid = character:WaitForChild("Humanoid")
 local rootpart = character:WaitForChild("HumanoidRootPart")
 
--- Config velocidad
 humanoid.WalkSpeed = SPEED
 humanoid.JumpPower = JUMP_POWER
 
--- Encontrar MÁS CERCA $250 Prompt (¡MAGIA!)
-local function findClosest250()
+-- Encontrar MÁS CERCA [TU PRECIO]
+local function findClosestPrice()
     local candidates = {}
     
     for _, obj in ipairs(workspace:GetDescendants()) do
@@ -34,12 +33,12 @@ local function findClosest250()
             local objText = obj.ObjectText:lower()
             local actText = obj.ActionText:lower()
             
-            -- Filtra EXACTO: "$6,700,000" Y "comprar"
-            if objText:find("$6,700,000") and (actText:find("comprar") or actText:find("buy")) then
+            -- Detecta TU PRECIO + "comprar"
+            if objText:find(TARGET_PRICE:lower()) and (actText:find("comprar") or actText:find("buy")) then
                 local model = obj:FindFirstAncestorOfClass("Model")
                 if model and model:FindFirstChild("HumanoidRootPart") then
                     table.insert(candidates, {npc = model, prompt = obj})
-                    print("🔍 Encontrado $6,700,000: " .. obj.ObjectText)  -- Debug
+                    print("🔍 Encontrado " .. TARGET_PRICE .. ": " .. obj.ObjectText)
                 end
             end
         end
@@ -62,19 +61,17 @@ local function findClosest250()
     return closest
 end
 
--- Ir al NPC (Pathfinding + Tween fallback)
+-- Ir al NPC
 local function goToNPC(npc)
     local hrp = npc:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    local targetPos = hrp.Position + Vector3.new(0, 3, 0)  -- Un poco arriba
+    local targetPos = hrp.Position + Vector3.new(0, 3, 0)
     
-    -- Pathfinding principal
     local path = PathfindingService:CreatePath({
         AgentRadius = 3,
         AgentHeight = 6,
         AgentCanJump = true,
-        WaypointSpacing = 4,
-        Costs = {Water = 50}
+        WaypointSpacing = 4
     })
     
     local success = pcall(function() path:ComputeAsync(rootpart.Position, targetPos) end)
@@ -82,13 +79,12 @@ local function goToNPC(npc)
     if success and path.Status == Enum.PathStatus.Success then
         local waypoints = path:GetWaypoints()
         for _, wp in ipairs(waypoints) do
-            if not getgenv().AutoBuy250 then return end
+            if not getgenv().AutoBuyPrice then return end
             humanoid:MoveTo(wp.Position)
             if wp.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
             humanoid.MoveToFinished:Wait(2)
         end
     else
-        -- Fallback: Tween suave y rápido
         local dist = (rootpart.Position - targetPos).Magnitude
         local tweenInfo = TweenInfo.new(math.max(dist / 80, 0.5), "Linear")
         local tween = TweenService:Create(rootpart, tweenInfo, {CFrame = CFrame.new(targetPos)})
@@ -100,37 +96,37 @@ end
 -- COMPRAR
 local function buyFromPrompt(prompt)
     fireproximityprompt(prompt)
-    print("✅ ¡COMPRADO $6,700,000 BRAINROT!")
+    print("✅ ¡COMPRADO " .. TARGET_PRICE .. " BRAINROT!")
     return true
 end
 
--- LOOP INFINITO: Farm toda la noche
+-- LOOP INFINITO
 spawn(function()
     while true do
-        if getgenv().AutoBuy250 then
-            local target = findClosest250()
+        if getgenv().AutoBuyPrice then
+            local target = findClosestPrice()
             if target then
                 local hrp = target.npc:FindFirstChild("HumanoidRootPart")
                 local dist = (rootpart.Position - hrp.Position).Magnitude
                 
-                print("🛒 $6,700,000 a " .. math.floor(dist) .. " studs")
+                print("🛒 " .. TARGET_PRICE .. " a " .. math.floor(dist) .. " studs")
                 
                 if dist > BUY_DISTANCE then
                     goToNPC(target.npc)
                 else
                     buyFromPrompt(target.prompt)
-                    wait(0.8)  -- Cooldown post-compra
+                    wait(0.8)
                 end
             else
-                print("🔍 Buscando $6,700,000 en pasarela...")
+                print("🔍 Buscando " .. TARGET_PRICE .. " en pasarela...")
                 wait(1)
             end
         end
-        wait(0.2)  -- Súper rápido
+        wait(0.2)
     end
 end)
 
--- Respawn auto + velocidad
+-- Respawn
 player.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoid = character:WaitForChild("Humanoid")
@@ -139,6 +135,5 @@ player.CharacterAdded:Connect(function(newChar)
     humanoid.JumpPower = JUMP_POWER
 end)
 
-print("🚀 AUTO $6,700,000 ACTIVADO! (Steal a Brainrot Pasarela)")
-print("Para parar: getgenv().AutoBuy250 = false")
-print("💡 Si no detecta, mira consola (F9) para nombres exactos.")
+print("🚀 AUTO " .. TARGET_PRICE .. " ACTIVADO!")
+print("Para parar: getgenv().AutoBuyPrice = false")
